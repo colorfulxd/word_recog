@@ -60,10 +60,107 @@ def densenet(images, num_classes=1001, is_training=False,
     with tf.variable_scope(scope, 'DenseNet', [images, num_classes]):
         with slim.arg_scope(bn_drp_scope(is_training=is_training,
                                          keep_prob=dropout_keep_prob)) as ssc:
-            pass
             ##########################
             # Put your code here.
             ##########################
+            # 下面加入自己写的代码。
+            # Define the first stage, conv+pooling
+            # 16*224*224*3
+            # W is width or height.
+            # N=(W-F+2P)/S +1
+            end_point = 'Conv2d_1a_7x7'
+            # 64 kerenel here later will check if can be changed
+            net = slim.conv2d(images, 64, [7, 7], stride=2, padding='SAME', scope=end_point)
+            end_points[end_point] = net
+
+            print("1-Conv2d_1a_7x7", net.shape)
+            # output is (224-7+6)/2 + 1= 112
+            # 16*112*112*64
+            # Pooling 后大小(W-F +2*P)/S+1
+
+            end_point = 'MaxPool_2a_3x3'
+            net = slim.max_pool2d(net, [3, 3], stride=2, padding='SAME', scope=end_point)
+            end_points[end_point] = net
+
+            print("1-Pool", net.shape)
+            # (112-3 + 1*2)/2 + 1= 55+1= 56
+            # Output is
+            # 16*56*56*64
+
+            # Define the 2nd stage, Block definition.
+            # For block, it will include bottle neck and BN+RELU+Conv+dropout
+            # Define the number output of the features as growth.
+            # Because growth is the increment by layer inside the block
+            # with slim.arg_scope([slim.conv2d, slim.max_pool2d, slim.avg_pool2d],
+            # stride=1, padding='SAME'):
+            # First block layer
+            end_point = 'Block_6'
+            net = block(net, 6, growth, scope=end_point)
+            end_points[end_point] = net
+
+            # Block will not change the size
+            # Output is 16*56*56*[64+24*(6-1)]
+            print("block1", net.shape)
+
+            # Output is 16*56*56*[64+24*(6-1)] = 16*56*56*184
+            # Get the last dim of the tensor and do compression
+            num_outputs = reduce_dim(net)
+
+            # Transition layer1 [1*1] plus [2*2] pooling stride = 2
+            # bottle neck will decrease the feature map number half
+            end_point = 'transition1'
+            net = transition_op(net, num_outputs, scope=end_point)
+            end_points[end_point] = net
+            # [56-2+2*0]/2 + 1= 28 VALID pooling
+            # Output is 16*28*28*92
+            print("transition1", net.shape)
+            # Do block/transition and block as the document said.
+            # Block 24 layer
+            end_point = 'block2'
+            net = block(net, 24, growth, scope=end_point)
+            end_points[end_point] = net
+            # Output is 16*28*28*[92+24*(24-1)] = 16*28*28*644
+            print("block2", net.shape)
+            # transistion layer reduce the output feature map and pooling get the size decreased half
+            num_outputs = reduce_dim(net)
+            end_point = 'transition2'
+            net = transition_op(net, num_outputs, scope=end_point)
+            end_points[end_point] = net
+            # Output is 16*14*14*322
+            print("transition2", net.shape)
+            # Block
+            end_point = 'block3'
+            net = block(net, 16, growth, scope=end_point)
+            end_points[end_point] = net
+            # Output is 16*7*7*[322+24*(16-1)]=16*7*7*682
+            print("block3", net.shape)
+
+    with tf.variable_scope('Logits'):
+        # Global average pooling.
+        # Output [16*7*7*682]
+        net = tf.reduce_mean(net, [1, 2], keep_dims=True, name='GlobalPool')
+        end_points['global_pool'] = net
+
+        # Output [16*1*1*682]
+        end_point = 'Conv2d_1c_1x1'
+        net = slim.conv2d(net, 1000, [1, 1], activation_fn=None,
+                          normalizer_fn=None, padding='SAME', scope=end_point)
+        end_points[end_point] = net
+        # Output [16*1*1*1000]
+        end_point = 'Conv2d_1d_1x1'
+        logits = slim.conv2d(net, num_classes, [1, 1], activation_fn=None,
+                             normalizer_fn=None, padding='SAME', scope=end_point)
+        end_points[end_point] = logits
+        print("Conv2d_1d_1x1", logits.shape)
+        # Output [16*1*1*10]
+        logits = tf.squeeze(logits, [1, 2], name='SpatialSqueeze')
+        # Output [16*10]
+        print("logits1", logits.shape)
+
+    end_points['Logits'] = logits
+
+    # end_points['Predictions'] = prediction_fn(logits, scope='Predictions')
+    end_points['Predictions'] = slim.softmax(logits, scope='Predictions')
 
     return logits, end_points
 
