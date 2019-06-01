@@ -19,6 +19,11 @@ def bn_act_conv_drp(current, num_outputs, kernel_size, scope='block'):
     current = slim.dropout(current, scope=scope + '_dropout')
     return current
 
+def transition_op(current, num_outputs, scope='transition'):
+    # Here we can use the compression rate 0.5 to decrease the feature map number
+    current = slim.conv2d(current, num_outputs, [1,1],padding='SAME', scope=scope + '_conv')
+    current = slim.avg_pool2d(current, [2,2], padding='VALID',scope=scope + 'AvgPool')
+    return current
 
 def block(net, layers, growth, scope='block'):
     for idx in range(layers):
