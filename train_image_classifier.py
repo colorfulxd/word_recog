@@ -404,7 +404,9 @@ def main(_):
     ######################
     dataset = dataset_factory.get_dataset(
         FLAGS.dataset_name, FLAGS.dataset_split_name, FLAGS.dataset_dir)
-
+    num_classes = (dataset.num_classes - FLAGS.labels_offset)
+    print("dataset number classes",dataset.num_classes)
+    print("FLAGS.labels_offset", FLAGS.labels_offset)
     ######################
     # Select the network #
     ######################
